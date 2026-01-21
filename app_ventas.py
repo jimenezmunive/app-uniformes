@@ -85,8 +85,11 @@ if menu == "Nueva Venta":
     st.subheader("Datos del Cliente")
     col1, col2 = st.columns(2)
     with col1:
-        nombre_cliente = st.text_input("Nombre Cliente")
-        celular = st.text_input("Celular")
+        # Campos de Cliente actualizados
+        nombre_cliente = st.text_input("Nombre Cliente (Obligatorio)")
+        celular_principal = st.text_input("Celular Principal (Obligatorio)")
+        celular_adicional = st.text_input("Celular adicional (Opcional)")
+        
     with col2:
         descripcion = st.text_area("Descripción")
         colegio = st.text_input("Colegio", value="NCP") 
@@ -124,9 +127,9 @@ if menu == "Nueva Venta":
                     cadera = st.number_input("Cadera", key=f"cad_nino_{i}")
                     pierna = st.number_input("Pierna", key=f"pier_nino_{i}")
 
-                # Botón de acción
+                # Botón de acción (Nombre actualizado)
                 es_actualizacion = i < len(st.session_state.carrito_ninos)
-                texto_boton = "🔄 Actualizar niño al pedido" if es_actualizacion else "✅ Confirmar niño al pedido"
+                texto_boton = "🔄 Actualizar pedido" if es_actualizacion else "✅ Confirmar pedido"
                 
                 if st.button(texto_boton, key=f"btn_nino_{i}"):
                     precio_camisa = precios_camisas_nino[talla_camisa_m] if cant_camisa_m > 0 else 0
@@ -170,8 +173,9 @@ if menu == "Nueva Venta":
                 if cant_camisa_f > 0:
                     talla_camisa_f = st.selectbox("Talla Camisa", tallas, key=f"talla_nina_{i}")
                 
+                # Botón Acción (Nombre actualizado)
                 es_actualizacion_f = i < len(st.session_state.carrito_ninas)
-                texto_boton_f = "🔄 Actualizar niña al pedido" if es_actualizacion_f else "✅ Confirmar niña al pedido"
+                texto_boton_f = "🔄 Actualizar pedido" if es_actualizacion_f else "✅ Confirmar pedido"
 
                 if st.button(texto_boton_f, key=f"btn_nina_{i}"):
                     precio_camisa = precios_camisas_nina[talla_camisa_f] if cant_camisa_f > 0 else 0
@@ -243,7 +247,6 @@ if menu == "Nueva Venta":
     with col_pay1:
         valor_recibido = st.number_input("Valor Recibido", min_value=0, step=1000)
     with col_pay2:
-        # ACTUALIZACIÓN: Incluye "-Seleccionar-"
         tipo_pago = st.selectbox("Tipo de Pago", ["-Seleccionar-", "Efectivo", "Transferencia"])
 
     estado_pago = "Pendiente"
@@ -258,11 +261,13 @@ if menu == "Nueva Venta":
             st.error("Error: Valor recibido mayor al total")
     
     if st.button("💾 CERRAR VENTA Y GUARDAR"):
-        # VALIDACIONES
+        # VALIDACIONES ESTRICTAS DE CAMPOS OBLIGATORIOS
         if not nombre_cliente:
-            st.error("Falta el nombre del cliente")
+            st.error("⚠️ Falta diligenciar: Nombre Cliente")
+        elif not celular_principal:
+            st.error("⚠️ Falta diligenciar: Celular Principal")
         elif gran_total == 0:
-            st.error("El pedido está vacío")
+            st.error("⚠️ El pedido está vacío (Agregue al menos un producto)")
         elif tipo_pago == "-Seleccionar-":
             st.error("⚠️ Por favor seleccione un TIPO DE PAGO válido (Efectivo o Transferencia).")
         else:
@@ -271,7 +276,8 @@ if menu == "Nueva Venta":
                 "ID": id_venta,
                 "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "Cliente": nombre_cliente,
-                "Celular": celular,
+                "Celular Principal": celular_principal,
+                "Celular Adicional": celular_adicional,
                 "Colegio": colegio,
                 "Descripción": descripcion,
                 "Detalle Niños": str([ {k:v for k,v in i.items() if k!='ID_Temp'} for i in st.session_state.carrito_ninos]),
@@ -306,7 +312,15 @@ elif menu == "Buscar / Editar Ventas":
     if not df.empty:
         filtro = st.text_input("🔍 Buscar cliente...")
         if filtro:
-            df = df[df['Cliente'].astype(str).str.contains(filtro, case=False) | df['ID'].astype(str).str.contains(filtro)]
+            # Buscar también por celular principal
+            mask_cliente = df['Cliente'].astype(str).str.contains(filtro, case=False)
+            mask_id = df['ID'].astype(str).str.contains(filtro)
+            # Intentamos buscar en celular principal si la columna existe en el excel viejo
+            if 'Celular Principal' in df.columns:
+                 mask_cel = df['Celular Principal'].astype(str).str.contains(filtro)
+                 df = df[mask_cliente | mask_id | mask_cel]
+            else:
+                 df = df[mask_cliente | mask_id]
         
         st.dataframe(df.style.apply(lambda x: ['background-color: #ffcccc' if (x['Saldo Pendiente'] > 0 or x.get('Entrega Tela Pendiente') == 'Si') else 'background-color: #ccffcc' for i in x], axis=1))
         
