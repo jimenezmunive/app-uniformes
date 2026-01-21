@@ -30,7 +30,7 @@ def cargar_datos():
         try:
             df = pd.read_excel(ARCHIVO_DB, dtype={'ID': str, 'Celular Principal': str, 'Celular Adicional': str})
             # Filtro de seguridad para columnas nuevas
-            if 'Medidas Cin (cm)' not in df.columns:
+            if 'Largo Pant (cm)' not in df.columns:
                 return pd.DataFrame()
             return df
         except:
@@ -48,9 +48,9 @@ def actualizar_db(df):
     df.to_excel(ARCHIVO_DB, index=False)
 
 # --- FUNCIONES DE CONFIGURACIÓN (PRECIOS) ---
-def obtener_defaults_imagen():
-    # VALORES RESTAURADOS (ORIGINALES)
-    return {
+def cargar_config():
+    # VALORES POR DEFECTO (PREDETERMINADOS DE LA IMAGEN)
+    defaults = {
         "precios_nino": {
             # Niño: 4-14 (44k), 16-M (46k), L-XL (48k)
             "4": 44000, "6": 44000, "8": 44000, "10": 44000, "12": 44000, "14": 44000,
@@ -65,11 +65,8 @@ def obtener_defaults_imagen():
             "L": 46000, "XL": 46000
         },
         "precio_pantalon": 35000,
-        "ultima_actualizacion": "Valores Originales (Restaurados)"
+        "ultima_actualizacion": "Valores Iniciales"
     }
-
-def cargar_config():
-    defaults = obtener_defaults_imagen()
     
     if os.path.exists(ARCHIVO_CONFIG):
         try:
@@ -98,7 +95,7 @@ if 'num_forms_ninos' not in st.session_state:
 if 'num_forms_ninas' not in st.session_state:
     st.session_state.num_forms_ninas = 1
 
-# Cargar configuración
+# Cargar configuración actual o defaults
 config_actual = cargar_config()
 
 # --- BARRA LATERAL ---
@@ -127,14 +124,6 @@ st.sidebar.markdown("---")
 st.sidebar.header("💰 Gestión de Precios")
 
 st.sidebar.info(f"📅 Act: {config_actual.get('ultima_actualizacion', 'N/A')}")
-
-# Botón para restaurar valores de la imagen por si se desconfigura
-if st.sidebar.button("🔄 Restaurar Precios de Imagen"):
-    config_imagen = obtener_defaults_imagen()
-    guardar_config(config_imagen)
-    st.sidebar.success("Precios restaurados a la imagen original.")
-    time.sleep(1)
-    st.rerun()
 
 with st.sidebar.form("form_precios"):
     tallas = ["4", "6", "8", "10", "12", "14", "16", "S", "M", "L", "XL"]
@@ -221,15 +210,14 @@ if menu == "Nueva Venta":
                 
                 cant_pantalon = st.number_input("Cant. Pantalón", min_value=0, value=0, key=f"cant_pant_nino_{i}")
                 
-                cintura, cadera, pierna, largo_m = 0, 0, 0, 0.0
+                cintura, cadera, pierna, largo_cm = 0, 0, 0, 0
                 if cant_pantalon > 0:
                     st.caption("Medidas Pantalón (cm):")
                     cintura = st.number_input("Cintura (cm)", min_value=0, step=1, format="%d", key=f"cint_nino_{i}")
                     cadera = st.number_input("Cadera (cm)", min_value=0, step=1, format="%d", key=f"cad_nino_{i}")
                     pierna = st.number_input("Pierna (cm)", min_value=0, step=1, format="%d", key=f"pier_nino_{i}")
                     
-                    st.caption("Consumo de Tela (mts):")
-                    largo_m = st.number_input("Largo Pantalón (mts)", min_value=0.0, step=0.01, format="%.2f", key=f"largo_nino_{i}", help="Medida para calcular consumo de tela")
+                    largo_cm = st.number_input("Largo Pantalón (cm)", min_value=0, step=1, format="%d", key=f"largo_nino_{i}")
 
                 es_actualizacion = i < len(st.session_state.carrito_ninos)
                 texto_boton = "🔄 Actualizar pedido" if es_actualizacion else "✅ Confirmar pedido"
@@ -238,7 +226,8 @@ if menu == "Nueva Venta":
                     precio_camisa = precios_camisas_nino.get(talla_camisa_m, 0) if cant_camisa_m > 0 else 0
                     subtotal = (cant_camisa_m * precio_camisa) + (cant_pantalon * costo_pantalon)
                     
-                    consumo_tela_item = (largo_m + 0.20) * cant_pantalon if cant_pantalon > 0 else 0
+                    # Convertimos cm a metros para el cálculo
+                    consumo_tela_item = ((largo_cm / 100.0) + 0.20) * cant_pantalon if cant_pantalon > 0 else 0
                     
                     item_data = {
                         "ID_Temp": i, 
@@ -250,7 +239,7 @@ if menu == "Nueva Venta":
                         "Medidas Cin": cintura if cant_pantalon > 0 else 0,
                         "Medidas Cad": cadera if cant_pantalon > 0 else 0,
                         "Medidas Pier": pierna if cant_pantalon > 0 else 0,
-                        "Largo Pantalon": largo_m if cant_pantalon > 0 else 0,
+                        "Largo Pantalon": largo_cm if cant_pantalon > 0 else 0, # Se guarda en CM
                         "Consumo Tela Calc": consumo_tela_item,
                         "Subtotal": subtotal
                     }
@@ -346,7 +335,7 @@ if menu == "Nueva Venta":
             df_ninos_view = pd.DataFrame(st.session_state.carrito_ninos)
             if not df_ninos_view.empty:
                 st.markdown("**Lista Niños:**")
-                df_show_nino = df_ninos_view[['Tipo_Visual', 'Nombre Alumno', 'Largo Pantalon', 'Subtotal']].rename(columns={'Largo Pantalon': 'Largo Pant (mts)'})
+                df_show_nino = df_ninos_view[['Tipo_Visual', 'Nombre Alumno', 'Largo Pantalon', 'Subtotal']].rename(columns={'Largo Pantalon': 'Largo Pant (cm)'})
                 st.dataframe(df_show_nino)
     with col_res2:
         if st.session_state.carrito_ninas:
@@ -436,10 +425,13 @@ if menu == "Nueva Venta":
                     "Camisas": item["Camisas"],
                     "Talla Camisa": item["Talla Camisa"],
                     "Pantalones": item.get("Pantalones", 0),
-                    "Largo Pant (mts)": item.get("Largo Pantalon", 0),
+                    
+                    # BD: Largo en CM
+                    "Largo Pant (cm)": item.get("Largo Pantalon", 0),
                     "Medidas Cin (cm)": item.get("Medidas Cin", 0),
                     "Medidas Cad (cm)": item.get("Medidas Cad", 0),
                     "Medidas Pier (cm)": item.get("Medidas Pier", 0),
+                    
                     "Subtotal niño(a)": subtotal_item,
                     "Pagado (Distribuido)": int(pago_asignado),
                     "Saldo Pendiente (Distribuido)": int(saldo_pendiente_item),
@@ -584,10 +576,13 @@ elif menu == "Buscar / Editar Ventas":
                 st.markdown("#### 🧵 Gestión de Tela")
                 req_total = 0
                 for _, row in filas_venta.iterrows():
-                    largo = row.get('Largo Pant (mts)', 0)
+                    # Usamos el nuevo nombre de columna (cm) para obtener el largo
+                    # Pero OJO: la fórmula requiere metros. Si guardamos cm, convertimos
+                    largo_cm = row.get('Largo Pant (cm)', 0)
                     qty = row.get('Pantalones', 0)
-                    if largo > 0 and qty > 0:
-                        req_total += (largo + 0.20) * qty
+                    if largo_cm > 0 and qty > 0:
+                        # Convertir cm a metros para el cálculo: (cm/100) + 0.20
+                        req_total += ((largo_cm / 100.0) + 0.20) * qty
                 
                 req_sugerido = redondear_tela(req_total)
                 st.write(f"Sugerido: **{req_sugerido}mts** | Entregado: **{metros_entregados_real}mts**")
