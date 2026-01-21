@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-import io
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Gestión de Ventas Uniformes", layout="wide")
@@ -27,11 +26,18 @@ def guardar_venta(nueva_venta):
 def actualizar_db(df):
     df.to_excel(ARCHIVO_DB, index=False)
 
-# --- INICIALIZACIÓN DE ESTADO (CARRITO) ---
+# --- INICIALIZACIÓN DE ESTADO ---
+# Usaremos listas para almacenar los pedidos confirmados
 if 'carrito_ninos' not in st.session_state:
     st.session_state.carrito_ninos = []
 if 'carrito_ninas' not in st.session_state:
     st.session_state.carrito_ninas = []
+
+# Contadores para saber cuántos formularios mostrar
+if 'num_forms_ninos' not in st.session_state:
+    st.session_state.num_forms_ninos = 1
+if 'num_forms_ninas' not in st.session_state:
+    st.session_state.num_forms_ninas = 1
 
 # --- BARRA LATERAL: CONFIGURACIÓN Y DESCARGA ---
 st.sidebar.header("⚙️ Configuración")
@@ -41,39 +47,32 @@ st.sidebar.markdown("### 📥 Respaldo de Datos")
 if os.path.exists(ARCHIVO_DB):
     with open(ARCHIVO_DB, "rb") as f:
         bytes_data = f.read()
-    
     st.sidebar.download_button(
-        label="Descargar Excel al Dispositivo",
+        label="Descargar Excel",
         data=bytes_data,
         file_name=f"Ventas_Uniformes_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        help="Haz clic para guardar una copia de las ventas en tu celular o PC"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-else:
-    st.sidebar.warning("Aún no hay ventas para descargar.")
 
 st.sidebar.markdown("---")
-st.sidebar.header("💰 Configuración de Precios")
+st.sidebar.header("💰 Precios")
 st.sidebar.info("Modificar precios no afecta ventas ya guardadas.")
 
 tallas = ["4", "6", "8", "10", "12", "14", "16", "S", "M", "L", "XL"]
 
-# PRECIOS NIÑO
 st.sidebar.markdown("#### 👦 Precios Camisas NIÑO")
 precios_camisas_nino = {}
 for talla in tallas:
-    precios_camisas_nino[talla] = st.sidebar.number_input(f"Costo Camisa Niño Talla {talla}", value=30000, step=1000, key=f"p_nino_{talla}")
+    precios_camisas_nino[talla] = st.sidebar.number_input(f"Costo Niño Talla {talla}", value=30000, step=1000, key=f"p_nino_{talla}")
 
 st.sidebar.markdown("#### 👖 Precio Pantalón NIÑO")
 costo_pantalon = st.sidebar.number_input("Costo Pantalón (Valor único)", value=45000, step=1000)
 
 st.sidebar.markdown("---")
-
-# PRECIOS NIÑA
 st.sidebar.markdown("#### 👧 Precios Camisas NIÑA")
 precios_camisas_nina = {}
 for talla in tallas:
-    precios_camisas_nina[talla] = st.sidebar.number_input(f"Costo Camisa Niña Talla {talla}", value=30000, step=1000, key=f"p_nina_{talla}")
+    precios_camisas_nina[talla] = st.sidebar.number_input(f"Costo Niña Talla {talla}", value=30000, step=1000, key=f"p_nina_{talla}")
 
 
 # --- INTERFAZ PRINCIPAL ---
@@ -92,115 +91,187 @@ if menu == "Nueva Venta":
         celular = st.text_input("Celular")
     with col2:
         descripcion = st.text_area("Descripción")
-        colegio = st.text_input("Colegio", value="NCP (Predeterminado)", disabled=True)
+        # Cambio: Colegio editable pero con valor por defecto
+        colegio = st.text_input("Colegio", value="NCP") 
 
     st.markdown("---")
     
-    # --- ÁREA DE AGREGAR PRODUCTOS ---
-    col_add1, col_add2 = st.columns(2)
+    col_main_nino, col_main_nina = st.columns(2)
     
-    with col_add1:
-        st.markdown("### 👦 Adicionar Niño")
-        with st.expander("Detalles Niño"):
-            nombre_alumno_m = st.text_input("Nombre Alumno (Niño)")
-            talla_camisa_m = st.selectbox("Talla Camisa Niño", tallas, key="t_nino")
-            cant_camisa_m = st.number_input("Cant. Camisa Niño", min_value=0, value=0, key="c_nino")
-            
-            st.markdown("**Medidas Pantalón:**")
-            cintura = st.number_input("Cintura", key="cin")
-            cadera = st.number_input("Cadera", key="cad")
-            pierna = st.number_input("Contorno Pierna", key="pier")
-            cant_pantalon = st.number_input("Cant. Pantalón", min_value=0, value=0, key="cp_nino")
-            
-            entrega_tela = st.radio("¿Entrega tela?", ("No", "Si"), key="tela_opt")
-            metros_tela = 0.0
-            if entrega_tela == "Si":
-                metros_tela = st.number_input("Metros de tela", min_value=0.0, step=0.1)
-            
-            if st.button("➕ Agregar Niño al Pedido"):
-                # CÁLCULO CON PRECIOS DE NIÑO
-                precio_camisa = precios_camisas_nino[talla_camisa_m]
-                subtotal = (cant_camisa_m * precio_camisa) + (cant_pantalon * costo_pantalon)
+    # ------------------------------------------------
+    # LÓGICA DE NIÑOS
+    # ------------------------------------------------
+    with col_main_nino:
+        st.markdown("### 👦 Niño")
+        
+        # Bucle para mostrar formularios dinámicos
+        for i in range(st.session_state.num_forms_ninos):
+            with st.expander(f"Detalles Niño {i+1}", expanded=True):
+                # Generamos claves únicas para cada widget usando 'i'
+                nombre_alumno_m = st.text_input(f"Nombre Alumno", key=f"nom_nino_{i}")
                 
-                item = {
-                    "Tipo": "Niño",
-                    "Nombre Alumno": nombre_alumno_m,
-                    "Camisas": cant_camisa_m,
-                    "Talla Camisa": talla_camisa_m,
-                    "Precio Unit. Camisa": precio_camisa,
-                    "Pantalones": cant_pantalon,
-                    "Medidas": f"Cin:{cintura}, Cad:{cadera}, Pier:{pierna}",
-                    "Entrega Tela": entrega_tela,
-                    "Metros Tela": metros_tela,
-                    "Subtotal": subtotal
-                }
-                st.session_state.carrito_ninos.append(item)
-                st.success(f"Niño agregado. (Camisa T{talla_camisa_m}: ${precio_camisa:,.0f})")
+                # 1. Cantidad Camisa primero
+                cant_camisa_m = st.number_input("Cant. Camisa", min_value=0, value=0, key=f"cant_cam_nino_{i}")
+                
+                # Solo mostrar talla si cantidad > 0
+                talla_camisa_m = "4" # Valor default
+                if cant_camisa_m > 0:
+                    talla_camisa_m = st.selectbox("Talla Camisa", tallas, key=f"talla_nino_{i}")
+                
+                st.markdown("---")
+                
+                # 2. Cantidad Pantalón primero
+                cant_pantalon = st.number_input("Cant. Pantalón", min_value=0, value=0, key=f"cant_pant_nino_{i}")
+                
+                cintura, cadera, pierna = 0.0, 0.0, 0.0
+                if cant_pantalon > 0:
+                    st.caption("Medidas Pantalón:")
+                    cintura = st.number_input("Cintura", key=f"cint_nino_{i}")
+                    cadera = st.number_input("Cadera", key=f"cad_nino_{i}")
+                    pierna = st.number_input("Pierna", key=f"pier_nino_{i}")
 
-    with col_add2:
-        st.markdown("### 👧 Adicionar Niña")
-        with st.expander("Detalles Niña"):
-            nombre_alumno_f = st.text_input("Nombre Alumna (Niña)")
-            talla_camisa_f = st.selectbox("Talla Camisa Niña", tallas, key="t_nina")
-            cant_camisa_f = st.number_input("Cant. Camisa Niña", min_value=0, value=0, key="c_nina")
-            
-            if st.button("➕ Agregar Niña al Pedido"):
-                # CÁLCULO CON PRECIOS DE NIÑA
-                precio_camisa = precios_camisas_nina[talla_camisa_f]
-                subtotal = (cant_camisa_f * precio_camisa)
+                # Botón de acción (Confirmar vs Actualizar)
+                # Verificamos si este índice 'i' ya existe en el carrito guardado
+                es_actualizacion = i < len(st.session_state.carrito_ninos)
+                texto_boton = "🔄 Actualizar niño al pedido" if es_actualizacion else "✅ Confirmar niño al pedido"
                 
-                item = {
-                    "Tipo": "Niña",
-                    "Nombre Alumno": nombre_alumno_f,
-                    "Camisas": cant_camisa_f,
-                    "Talla Camisa": talla_camisa_f,
-                    "Precio Unit. Camisa": precio_camisa,
-                    "Subtotal": subtotal
-                }
-                st.session_state.carrito_ninas.append(item)
-                st.success(f"Niña agregada. (Camisa T{talla_camisa_f}: ${precio_camisa:,.0f})")
+                if st.button(texto_boton, key=f"btn_nino_{i}"):
+                    precio_camisa = precios_camisas_nino[talla_camisa_m] if cant_camisa_m > 0 else 0
+                    subtotal = (cant_camisa_m * precio_camisa) + (cant_pantalon * costo_pantalon)
+                    
+                    item_data = {
+                        "ID_Temp": i, # Para rastrear formulario
+                        "Tipo": "Niño",
+                        "Nombre Alumno": nombre_alumno_m,
+                        "Camisas": cant_camisa_m,
+                        "Talla Camisa": talla_camisa_m if cant_camisa_m > 0 else "N/A",
+                        "Pantalones": cant_pantalon,
+                        "Medidas": f"Cin:{cintura}, Cad:{cadera}, Pier:{pierna}" if cant_pantalon > 0 else "N/A",
+                        "Subtotal": subtotal
+                    }
+                    
+                    if es_actualizacion:
+                        st.session_state.carrito_ninos[i] = item_data
+                        st.success(f"Niño {i+1} actualizado.")
+                    else:
+                        st.session_state.carrito_ninos.append(item_data)
+                        st.success(f"Niño {i+1} confirmado.")
+
+        # Botón afuera para agregar otro formulario de niño
+        if st.button("➕ Adicionar otro Niño"):
+            st.session_state.num_forms_ninos += 1
+            st.rerun()
+
+    # ------------------------------------------------
+    # LÓGICA DE NIÑAS
+    # ------------------------------------------------
+    with col_main_nina:
+        st.markdown("### 👧 Niña")
+        
+        for i in range(st.session_state.num_forms_ninas):
+            with st.expander(f"Detalles Niña {i+1}", expanded=True):
+                nombre_alumno_f = st.text_input(f"Nombre Alumna", key=f"nom_nina_{i}")
+                
+                # 1. Cantidad Camisa primero
+                cant_camisa_f = st.number_input("Cant. Camisa", min_value=0, value=0, key=f"cant_cam_nina_{i}")
+                
+                talla_camisa_f = "4"
+                if cant_camisa_f > 0:
+                    talla_camisa_f = st.selectbox("Talla Camisa", tallas, key=f"talla_nina_{i}")
+                
+                # Botón Acción
+                es_actualizacion_f = i < len(st.session_state.carrito_ninas)
+                texto_boton_f = "🔄 Actualizar niña al pedido" if es_actualizacion_f else "✅ Confirmar niña al pedido"
+
+                if st.button(texto_boton_f, key=f"btn_nina_{i}"):
+                    precio_camisa = precios_camisas_nina[talla_camisa_f] if cant_camisa_f > 0 else 0
+                    subtotal = (cant_camisa_f * precio_camisa)
+                    
+                    item_data = {
+                        "ID_Temp": i,
+                        "Tipo": "Niña",
+                        "Nombre Alumno": nombre_alumno_f,
+                        "Camisas": cant_camisa_f,
+                        "Talla Camisa": talla_camisa_f if cant_camisa_f > 0 else "N/A",
+                        "Subtotal": subtotal
+                    }
+                    
+                    if es_actualizacion_f:
+                        st.session_state.carrito_ninas[i] = item_data
+                        st.success(f"Niña {i+1} actualizada.")
+                    else:
+                        st.session_state.carrito_ninas.append(item_data)
+                        st.success(f"Niña {i+1} confirmada.")
+
+        if st.button("➕ Adicionar otra Niña"):
+            st.session_state.num_forms_ninas += 1
+            st.rerun()
+
+    # ------------------------------------------------
+    # LÓGICA GLOBAL DE TELA (SOLO SI HAY PANTALONES)
+    # ------------------------------------------------
+    st.markdown("---")
+    
+    # Calcular si hay pantalones en CUALQUIERA de los niños agregados al carrito
+    total_pantalones_global = sum(n.get('Pantalones', 0) for n in st.session_state.carrito_ninos)
+    
+    entrega_tela_global = "No"
+    metros_tela_global = 0.0
+
+    if total_pantalones_global > 0:
+        st.info(f"👖 Se detectaron {total_pantalones_global} pantalones en el pedido total.")
+        st.markdown("#### Datos de Confección (Global)")
+        col_tela1, col_tela2 = st.columns(2)
+        with col_tela1:
+            entrega_tela_global = st.radio("¿Entrega tela para la confección?", ("No", "Si"), index=0)
+        with col_tela2:
+            if entrega_tela_global == "Si":
+                metros_tela_global = st.number_input("Metros totales de tela entregados:", min_value=0.0, step=0.1)
 
     # --- RESUMEN Y TOTALES ---
     st.markdown("---")
-    st.subheader("🧾 Resumen del Pedido")
+    st.subheader("🧾 Resumen Final")
     
     total_nino = sum(item['Subtotal'] for item in st.session_state.carrito_ninos)
     total_nina = sum(item['Subtotal'] for item in st.session_state.carrito_ninas)
     gran_total = total_nino + total_nina
 
-    if st.session_state.carrito_ninos:
-        st.write("##### Detalle Niños:")
-        st.table(pd.DataFrame(st.session_state.carrito_ninos))
-        st.write(f"**Sub-Total Niño:** ${total_nino:,.0f}")
-
-    if st.session_state.carrito_ninas:
-        st.write("##### Detalle Niñas:")
-        st.table(pd.DataFrame(st.session_state.carrito_ninas))
-        st.write(f"**Sub-Total Niña:** ${total_nina:,.0f}")
+    col_res1, col_res2 = st.columns(2)
+    with col_res1:
+        if st.session_state.carrito_ninos:
+            st.markdown("**Lista Niños:**")
+            st.dataframe(pd.DataFrame(st.session_state.carrito_ninos).drop(columns=['ID_Temp'], errors='ignore'))
+    with col_res2:
+        if st.session_state.carrito_ninas:
+            st.markdown("**Lista Niñas:**")
+            st.dataframe(pd.DataFrame(st.session_state.carrito_ninas).drop(columns=['ID_Temp'], errors='ignore'))
 
     st.markdown(f"## Total General: ${gran_total:,.0f}")
 
     # --- PAGO Y CIERRE ---
     st.markdown("### Registro de Pago")
-    valor_recibido = st.number_input("Valor Recibido", min_value=0, step=1000)
-    tipo_pago = st.selectbox("Tipo de Pago", ["Efectivo", "Transferencia"])
+    col_pay1, col_pay2 = st.columns(2)
+    with col_pay1:
+        valor_recibido = st.number_input("Valor Recibido", min_value=0, step=1000)
+    with col_pay2:
+        tipo_pago = st.selectbox("Tipo de Pago", ["Efectivo", "Transferencia"])
 
     estado_pago = "Pendiente"
     if valor_recibido > 0:
         if valor_recibido < gran_total:
             estado_pago = "Abono"
-            st.warning(f"Estado: ABONO. Restan: ${gran_total - valor_recibido:,.0f}")
+            st.warning(f"⚠️ Restan: ${gran_total - valor_recibido:,.0f}")
         elif valor_recibido == gran_total:
             estado_pago = "Pago Total"
-            st.success("Estado: PAGO TOTAL")
+            st.success("✅ PAGO TOTAL")
         else:
-            st.error("El valor recibido supera el total.")
+            st.error("Error: Valor recibido mayor al total")
     
-    if st.button("💾 CONFIRMAR Y CERRAR VENTA"):
+    if st.button("💾 CERRAR VENTA Y GUARDAR"):
         if not nombre_cliente:
             st.error("Falta el nombre del cliente")
         elif gran_total == 0:
-            st.error("El carrito está vacío")
+            st.error("El pedido está vacío")
         else:
             id_venta = datetime.now().strftime("%Y%m%d%H%M%S")
             nueva_venta = {
@@ -208,73 +279,82 @@ if menu == "Nueva Venta":
                 "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "Cliente": nombre_cliente,
                 "Celular": celular,
+                "Colegio": colegio,
                 "Descripción": descripcion,
-                "Detalle Niños": str(st.session_state.carrito_ninos),
-                "Detalle Niñas": str(st.session_state.carrito_ninas),
+                # Guardamos listas como string
+                "Detalle Niños": str([ {k:v for k,v in i.items() if k!='ID_Temp'} for i in st.session_state.carrito_ninos]),
+                "Detalle Niñas": str([ {k:v for k,v in i.items() if k!='ID_Temp'} for i in st.session_state.carrito_ninas]),
+                "Entrega Tela": entrega_tela_global,
+                "Metros Tela": metros_tela_global if entrega_tela_global == "Si" else 0,
+                "Entrega Tela Pendiente": "Si" if entrega_tela_global == "No" and total_pantalones_global > 0 else "No",
                 "Total General": gran_total,
                 "Pagado": valor_recibido,
                 "Saldo Pendiente": gran_total - valor_recibido,
                 "Estado Pago": estado_pago,
-                "Medio Pago": tipo_pago,
-                "Entrega Tela Pendiente": "Si" if any(x.get('Entrega Tela') == 'No' for x in st.session_state.carrito_ninos) else "No"
+                "Medio Pago": tipo_pago
             }
             guardar_venta(nueva_venta)
+            
+            # Reset
             st.session_state.carrito_ninos = []
             st.session_state.carrito_ninas = []
+            st.session_state.num_forms_ninos = 1
+            st.session_state.num_forms_ninas = 1
             st.balloons()
-            st.success("Venta registrada correctamente. Puede descargar la base de datos actualizada en el menú lateral.")
+            st.success("Venta guardada exitosamente.")
             st.rerun()
 
 # ==========================================
 # SECCIÓN 2: BUSCAR Y EDITAR
 # ==========================================
 elif menu == "Buscar / Editar Ventas":
-    st.header("Base de Datos de Ventas")
+    st.header("Base de Datos")
     df = cargar_datos()
     
     if not df.empty:
-        filtro = st.text_input("🔍 Buscar por Nombre de Cliente o ID")
-        
+        filtro = st.text_input("🔍 Buscar cliente...")
         if filtro:
             df = df[df['Cliente'].astype(str).str.contains(filtro, case=False) | df['ID'].astype(str).str.contains(filtro)]
         
-        st.dataframe(df.style.apply(lambda x: ['background-color: #ffcccc' if (x['Saldo Pendiente'] > 0 or x['Entrega Tela Pendiente'] == 'Si') else 'background-color: #ccffcc' for i in x], axis=1))
+        # Alerta visual colores
+        st.dataframe(df.style.apply(lambda x: ['background-color: #ffcccc' if (x['Saldo Pendiente'] > 0 or x.get('Entrega Tela Pendiente') == 'Si') else 'background-color: #ccffcc' for i in x], axis=1))
         
         st.markdown("---")
-        st.subheader("Editar Venta Existente")
-        id_editar = st.selectbox("Seleccione ID de venta para editar:", df['ID'].unique())
+        st.subheader("Gestión Post-Venta")
+        id_editar = st.selectbox("Seleccione ID:", df['ID'].unique())
         
         if id_editar:
             idx = df[df['ID'] == id_editar].index[0]
             venta_act = df.loc[idx]
             
-            st.write(f"Cliente: **{venta_act['Cliente']}** | Total: ${venta_act['Total General']:,.0f}")
-            
             col_e1, col_e2 = st.columns(2)
-            
             with col_e1:
-                st.markdown("#### Actualizar Pagos")
-                nuevo_pago = st.number_input("Nuevo valor total pagado (acumulado)", value=float(venta_act['Pagado']))
+                st.info(f"💰 Saldo Pendiente: ${venta_act['Saldo Pendiente']:,.0f}")
+                nuevo_pago = st.number_input("Actualizar Total Pagado:", value=float(venta_act['Pagado']))
                 if st.button("Actualizar Pago"):
                     df.at[idx, 'Pagado'] = nuevo_pago
                     saldo = venta_act['Total General'] - nuevo_pago
                     df.at[idx, 'Saldo Pendiente'] = saldo
-                    if saldo <= 0:
-                        df.at[idx, 'Estado Pago'] = "Pago Total"
-                    else:
-                        df.at[idx, 'Estado Pago'] = "Abono"
+                    df.at[idx, 'Estado Pago'] = "Pago Total" if saldo <= 0 else "Abono"
                     actualizar_db(df)
                     st.success("Pago actualizado")
                     st.rerun()
 
             with col_e2:
-                st.markdown("#### Entrega de Tela")
-                st.info(f"Estado actual tela pendiente: {venta_act.get('Entrega Tela Pendiente', 'N/A')}")
-                if st.button("Marcar Tela como ENTREGADA"):
-                    df.at[idx, 'Entrega Tela Pendiente'] = "No"
-                    actualizar_db(df)
-                    st.success("Estado de tela actualizado")
-                    st.rerun()
-            
+                # Lógica tela post-venta
+                tela_pend = venta_act.get('Entrega Tela Pendiente', 'No')
+                st.info(f"🧵 Entrega Tela Pendiente: {tela_pend}")
+                
+                if tela_pend == "Si":
+                    metros_entregados = st.number_input("Metros que acaban de entregar:", min_value=0.0)
+                    if st.button("Confirmar Recepción Tela"):
+                        df.at[idx, 'Entrega Tela Pendiente'] = "No"
+                        # Sumamos a lo que ya había (si había 0, pone los nuevos)
+                        df.at[idx, 'Metros Tela'] = float(venta_act.get('Metros Tela', 0)) + metros_entregados
+                        # Cambiamos el estado general de la venta a "Si" entregó tela
+                        df.at[idx, 'Entrega Tela'] = "Si" 
+                        actualizar_db(df)
+                        st.success("Tela actualizada")
+                        st.rerun()
     else:
-        st.warning("No hay ventas registradas aún.")
+        st.warning("Sin registros.")
