@@ -27,13 +27,11 @@ def actualizar_db(df):
     df.to_excel(ARCHIVO_DB, index=False)
 
 # --- INICIALIZACIÓN DE ESTADO ---
-# Usaremos listas para almacenar los pedidos confirmados
 if 'carrito_ninos' not in st.session_state:
     st.session_state.carrito_ninos = []
 if 'carrito_ninas' not in st.session_state:
     st.session_state.carrito_ninas = []
 
-# Contadores para saber cuántos formularios mostrar
 if 'num_forms_ninos' not in st.session_state:
     st.session_state.num_forms_ninos = 1
 if 'num_forms_ninas' not in st.session_state:
@@ -91,7 +89,6 @@ if menu == "Nueva Venta":
         celular = st.text_input("Celular")
     with col2:
         descripcion = st.text_area("Descripción")
-        # Cambio: Colegio editable pero con valor por defecto
         colegio = st.text_input("Colegio", value="NCP") 
 
     st.markdown("---")
@@ -104,17 +101,14 @@ if menu == "Nueva Venta":
     with col_main_nino:
         st.markdown("### 👦 Niño")
         
-        # Bucle para mostrar formularios dinámicos
         for i in range(st.session_state.num_forms_ninos):
             with st.expander(f"Detalles Niño {i+1}", expanded=True):
-                # Generamos claves únicas para cada widget usando 'i'
                 nombre_alumno_m = st.text_input(f"Nombre Alumno", key=f"nom_nino_{i}")
                 
                 # 1. Cantidad Camisa primero
                 cant_camisa_m = st.number_input("Cant. Camisa", min_value=0, value=0, key=f"cant_cam_nino_{i}")
                 
-                # Solo mostrar talla si cantidad > 0
-                talla_camisa_m = "4" # Valor default
+                talla_camisa_m = "4" 
                 if cant_camisa_m > 0:
                     talla_camisa_m = st.selectbox("Talla Camisa", tallas, key=f"talla_nino_{i}")
                 
@@ -130,8 +124,7 @@ if menu == "Nueva Venta":
                     cadera = st.number_input("Cadera", key=f"cad_nino_{i}")
                     pierna = st.number_input("Pierna", key=f"pier_nino_{i}")
 
-                # Botón de acción (Confirmar vs Actualizar)
-                # Verificamos si este índice 'i' ya existe en el carrito guardado
+                # Botón de acción
                 es_actualizacion = i < len(st.session_state.carrito_ninos)
                 texto_boton = "🔄 Actualizar niño al pedido" if es_actualizacion else "✅ Confirmar niño al pedido"
                 
@@ -140,7 +133,7 @@ if menu == "Nueva Venta":
                     subtotal = (cant_camisa_m * precio_camisa) + (cant_pantalon * costo_pantalon)
                     
                     item_data = {
-                        "ID_Temp": i, # Para rastrear formulario
+                        "ID_Temp": i, 
                         "Tipo": "Niño",
                         "Nombre Alumno": nombre_alumno_m,
                         "Camisas": cant_camisa_m,
@@ -157,7 +150,6 @@ if menu == "Nueva Venta":
                         st.session_state.carrito_ninos.append(item_data)
                         st.success(f"Niño {i+1} confirmado.")
 
-        # Botón afuera para agregar otro formulario de niño
         if st.button("➕ Adicionar otro Niño"):
             st.session_state.num_forms_ninos += 1
             st.rerun()
@@ -172,14 +164,12 @@ if menu == "Nueva Venta":
             with st.expander(f"Detalles Niña {i+1}", expanded=True):
                 nombre_alumno_f = st.text_input(f"Nombre Alumna", key=f"nom_nina_{i}")
                 
-                # 1. Cantidad Camisa primero
                 cant_camisa_f = st.number_input("Cant. Camisa", min_value=0, value=0, key=f"cant_cam_nina_{i}")
                 
                 talla_camisa_f = "4"
                 if cant_camisa_f > 0:
                     talla_camisa_f = st.selectbox("Talla Camisa", tallas, key=f"talla_nina_{i}")
                 
-                # Botón Acción
                 es_actualizacion_f = i < len(st.session_state.carrito_ninas)
                 texto_boton_f = "🔄 Actualizar niña al pedido" if es_actualizacion_f else "✅ Confirmar niña al pedido"
 
@@ -208,11 +198,10 @@ if menu == "Nueva Venta":
             st.rerun()
 
     # ------------------------------------------------
-    # LÓGICA GLOBAL DE TELA (SOLO SI HAY PANTALONES)
+    # LÓGICA GLOBAL DE TELA
     # ------------------------------------------------
     st.markdown("---")
     
-    # Calcular si hay pantalones en CUALQUIERA de los niños agregados al carrito
     total_pantalones_global = sum(n.get('Pantalones', 0) for n in st.session_state.carrito_ninos)
     
     entrega_tela_global = "No"
@@ -254,7 +243,8 @@ if menu == "Nueva Venta":
     with col_pay1:
         valor_recibido = st.number_input("Valor Recibido", min_value=0, step=1000)
     with col_pay2:
-        tipo_pago = st.selectbox("Tipo de Pago", ["Efectivo", "Transferencia"])
+        # ACTUALIZACIÓN: Incluye "-Seleccionar-"
+        tipo_pago = st.selectbox("Tipo de Pago", ["-Seleccionar-", "Efectivo", "Transferencia"])
 
     estado_pago = "Pendiente"
     if valor_recibido > 0:
@@ -268,10 +258,13 @@ if menu == "Nueva Venta":
             st.error("Error: Valor recibido mayor al total")
     
     if st.button("💾 CERRAR VENTA Y GUARDAR"):
+        # VALIDACIONES
         if not nombre_cliente:
             st.error("Falta el nombre del cliente")
         elif gran_total == 0:
             st.error("El pedido está vacío")
+        elif tipo_pago == "-Seleccionar-":
+            st.error("⚠️ Por favor seleccione un TIPO DE PAGO válido (Efectivo o Transferencia).")
         else:
             id_venta = datetime.now().strftime("%Y%m%d%H%M%S")
             nueva_venta = {
@@ -281,7 +274,6 @@ if menu == "Nueva Venta":
                 "Celular": celular,
                 "Colegio": colegio,
                 "Descripción": descripcion,
-                # Guardamos listas como string
                 "Detalle Niños": str([ {k:v for k,v in i.items() if k!='ID_Temp'} for i in st.session_state.carrito_ninos]),
                 "Detalle Niñas": str([ {k:v for k,v in i.items() if k!='ID_Temp'} for i in st.session_state.carrito_ninas]),
                 "Entrega Tela": entrega_tela_global,
@@ -316,7 +308,6 @@ elif menu == "Buscar / Editar Ventas":
         if filtro:
             df = df[df['Cliente'].astype(str).str.contains(filtro, case=False) | df['ID'].astype(str).str.contains(filtro)]
         
-        # Alerta visual colores
         st.dataframe(df.style.apply(lambda x: ['background-color: #ffcccc' if (x['Saldo Pendiente'] > 0 or x.get('Entrega Tela Pendiente') == 'Si') else 'background-color: #ccffcc' for i in x], axis=1))
         
         st.markdown("---")
@@ -341,7 +332,6 @@ elif menu == "Buscar / Editar Ventas":
                     st.rerun()
 
             with col_e2:
-                # Lógica tela post-venta
                 tela_pend = venta_act.get('Entrega Tela Pendiente', 'No')
                 st.info(f"🧵 Entrega Tela Pendiente: {tela_pend}")
                 
@@ -349,9 +339,7 @@ elif menu == "Buscar / Editar Ventas":
                     metros_entregados = st.number_input("Metros que acaban de entregar:", min_value=0.0)
                     if st.button("Confirmar Recepción Tela"):
                         df.at[idx, 'Entrega Tela Pendiente'] = "No"
-                        # Sumamos a lo que ya había (si había 0, pone los nuevos)
                         df.at[idx, 'Metros Tela'] = float(venta_act.get('Metros Tela', 0)) + metros_entregados
-                        # Cambiamos el estado general de la venta a "Si" entregó tela
                         df.at[idx, 'Entrega Tela'] = "Si" 
                         actualizar_db(df)
                         st.success("Tela actualizada")
