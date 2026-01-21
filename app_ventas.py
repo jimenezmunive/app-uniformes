@@ -36,7 +36,7 @@ if 'carrito_ninas' not in st.session_state:
 # --- BARRA LATERAL: CONFIGURACIÓN Y DESCARGA ---
 st.sidebar.header("⚙️ Configuración")
 
-# SECCIÓN NUEVA: BOTÓN DE DESCARGA
+# BOTÓN DE DESCARGA
 st.sidebar.markdown("### 📥 Respaldo de Datos")
 if os.path.exists(ARCHIVO_DB):
     with open(ARCHIVO_DB, "rb") as f:
@@ -53,16 +53,28 @@ else:
     st.sidebar.warning("Aún no hay ventas para descargar.")
 
 st.sidebar.markdown("---")
-st.sidebar.header("Precios")
-st.sidebar.info("Modificar estos precios no afectará ventas guardadas previamente")
+st.sidebar.header("💰 Configuración de Precios")
+st.sidebar.info("Modificar precios no afecta ventas ya guardadas.")
 
-# Precios Camisas (Niño/Niña) por talla
 tallas = ["4", "6", "8", "10", "12", "14", "16", "S", "M", "L", "XL"]
-precios_camisas = {}
-for talla in tallas:
-    precios_camisas[talla] = st.sidebar.number_input(f"Costo Camisa Talla {talla}", value=30000, step=1000)
 
+# PRECIOS NIÑO
+st.sidebar.markdown("#### 👦 Precios Camisas NIÑO")
+precios_camisas_nino = {}
+for talla in tallas:
+    precios_camisas_nino[talla] = st.sidebar.number_input(f"Costo Camisa Niño Talla {talla}", value=30000, step=1000, key=f"p_nino_{talla}")
+
+st.sidebar.markdown("#### 👖 Precio Pantalón NIÑO")
 costo_pantalon = st.sidebar.number_input("Costo Pantalón (Valor único)", value=45000, step=1000)
+
+st.sidebar.markdown("---")
+
+# PRECIOS NIÑA
+st.sidebar.markdown("#### 👧 Precios Camisas NIÑA")
+precios_camisas_nina = {}
+for talla in tallas:
+    precios_camisas_nina[talla] = st.sidebar.number_input(f"Costo Camisa Niña Talla {talla}", value=30000, step=1000, key=f"p_nina_{talla}")
+
 
 # --- INTERFAZ PRINCIPAL ---
 st.title("👕 Sistema de Ventas - Uniformes NCP")
@@ -106,12 +118,16 @@ if menu == "Nueva Venta":
                 metros_tela = st.number_input("Metros de tela", min_value=0.0, step=0.1)
             
             if st.button("➕ Agregar Niño al Pedido"):
-                subtotal = (cant_camisa_m * precios_camisas[talla_camisa_m]) + (cant_pantalon * costo_pantalon)
+                # CÁLCULO CON PRECIOS DE NIÑO
+                precio_camisa = precios_camisas_nino[talla_camisa_m]
+                subtotal = (cant_camisa_m * precio_camisa) + (cant_pantalon * costo_pantalon)
+                
                 item = {
                     "Tipo": "Niño",
                     "Nombre Alumno": nombre_alumno_m,
                     "Camisas": cant_camisa_m,
                     "Talla Camisa": talla_camisa_m,
+                    "Precio Unit. Camisa": precio_camisa,
                     "Pantalones": cant_pantalon,
                     "Medidas": f"Cin:{cintura}, Cad:{cadera}, Pier:{pierna}",
                     "Entrega Tela": entrega_tela,
@@ -119,7 +135,7 @@ if menu == "Nueva Venta":
                     "Subtotal": subtotal
                 }
                 st.session_state.carrito_ninos.append(item)
-                st.success("Niño agregado")
+                st.success(f"Niño agregado. (Camisa T{talla_camisa_m}: ${precio_camisa:,.0f})")
 
     with col_add2:
         st.markdown("### 👧 Adicionar Niña")
@@ -129,16 +145,20 @@ if menu == "Nueva Venta":
             cant_camisa_f = st.number_input("Cant. Camisa Niña", min_value=0, value=0, key="c_nina")
             
             if st.button("➕ Agregar Niña al Pedido"):
-                subtotal = (cant_camisa_f * precios_camisas[talla_camisa_f])
+                # CÁLCULO CON PRECIOS DE NIÑA
+                precio_camisa = precios_camisas_nina[talla_camisa_f]
+                subtotal = (cant_camisa_f * precio_camisa)
+                
                 item = {
                     "Tipo": "Niña",
                     "Nombre Alumno": nombre_alumno_f,
                     "Camisas": cant_camisa_f,
                     "Talla Camisa": talla_camisa_f,
+                    "Precio Unit. Camisa": precio_camisa,
                     "Subtotal": subtotal
                 }
                 st.session_state.carrito_ninas.append(item)
-                st.success("Niña agregada")
+                st.success(f"Niña agregada. (Camisa T{talla_camisa_f}: ${precio_camisa:,.0f})")
 
     # --- RESUMEN Y TOTALES ---
     st.markdown("---")
