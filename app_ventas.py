@@ -23,6 +23,8 @@ st.markdown("""
     .metric-title { font-size: 14px; font-weight: bold; color: #555; }
     .metric-value { font-size: 24px; font-weight: bold; color: #000; }
     div[data-testid="stSidebar"] { background-color: #f8f9fa; }
+    /* Estilo para botón de peligro */
+    .element-container button[kind="primary"] { background-color: #ff4b4b; border-color: #ff4b4b; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -447,9 +449,6 @@ if menu == "Nueva Venta":
                 else:
                     # Niño sin pantalones (raro pero posible)
                     estado_entrega_tela_fila = "No Aplica"
-
-                # REQUERIMIENTO: Tela Sugerida se guarda siempre (item['Consumo Tela Calc'])
-                # Ya se calculó arriba en el botón de agregar/editar item
                 
                 fila = {
                     "ID": id_venta,
@@ -685,10 +684,9 @@ elif menu == "Buscar / Editar Ventas":
                     elif qty_pant == 0:
                         df.at[idx, 'Entrega Tela'] = "No Aplica"
                     else:
-                        # Si es niño y tiene pantalones, asegurarnos que no diga No Aplica si antes decía Si/No
                          current_val = df.at[idx, 'Entrega Tela']
                          if current_val == "No Aplica":
-                             df.at[idx, 'Entrega Tela'] = "No" # Reiniciar a estado base si vuelve a tener pantalones
+                             df.at[idx, 'Entrega Tela'] = "No" 
 
                 actualizar_db(df)
                 st.success("Registros actualizados y recalculados.")
@@ -770,7 +768,7 @@ elif menu == "Buscar / Editar Ventas":
                 else:
                     st.success("✅ COMPLETO")
                 
-                # LISTADO DETALLADO POR NIÑO (SIN LINEA)
+                # LISTADO DETALLADO POR NIÑO
                 st.markdown("**Detalle por Niño:**")
                 for index, row in filas_venta_actual.iterrows():
                     if row['Pantalones'] > 0:
