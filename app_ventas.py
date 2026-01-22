@@ -19,7 +19,9 @@ ARCHIVO_CONFIG = 'config_precios.json'
 st.markdown("""
 <style>
     .stDataFrame { font-size: 14px; }
-    .metric-card { background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 10px; }
+    .metric-card { background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 10px; text-align: center; }
+    .metric-title { font-size: 14px; font-weight: bold; color: #555; }
+    .metric-value { font-size: 24px; font-weight: bold; color: #000; }
     div[data-testid="stSidebar"] { background-color: #f8f9fa; }
 </style>
 """, unsafe_allow_html=True)
@@ -29,8 +31,8 @@ def cargar_datos():
     if os.path.exists(ARCHIVO_DB):
         try:
             df = pd.read_excel(ARCHIVO_DB, dtype={'ID': str, 'Celular Principal': str, 'Celular Adicional': str})
-            # Filtro de seguridad para columnas nuevas
-            if 'Largo Pant (cm)' not in df.columns:
+            # Filtro de seguridad: Verificamos la columna de tela sugerida nueva
+            if 'Tela Sugerida (mts)' not in df.columns:
                 return pd.DataFrame()
             return df
         except:
@@ -49,16 +51,14 @@ def actualizar_db(df):
 
 # --- FUNCIONES DE CONFIGURACIÓN (PRECIOS) ---
 def cargar_config():
-    # VALORES POR DEFECTO (PREDETERMINADOS DE LA IMAGEN)
+    # VALORES POR DEFECTO
     defaults = {
         "precios_nino": {
-            # Niño: 4-14 (44k), 16-M (46k), L-XL (48k)
             "4": 44000, "6": 44000, "8": 44000, "10": 44000, "12": 44000, "14": 44000,
             "16": 46000, "S": 46000, "M": 46000,
             "L": 48000, "XL": 48000
         },
         "precios_nina": {
-            # Niña: 4-8 (38k), 10-16 (40k), S-M (43k), L-XL (46k)
             "4": 38000, "6": 38000, "8": 38000,
             "10": 40000, "12": 40000, "14": 40000, "16": 40000,
             "S": 43000, "M": 43000,
@@ -95,14 +95,16 @@ if 'num_forms_ninos' not in st.session_state:
 if 'num_forms_ninas' not in st.session_state:
     st.session_state.num_forms_ninas = 1
 
-# Cargar configuración actual o defaults
+# Cargar configuración
 config_actual = cargar_config()
 
 # --- BARRA LATERAL ---
 st.sidebar.header("⚙️ Configuración")
 
-# DESCARGA
-st.sidebar.markdown("### 📥 Respaldo de Datos")
+# SECCIÓN DE RESPALDO (DESCARGAR Y SUBIR)
+st.sidebar.markdown("### 📥 Respaldo y Restauración")
+
+# 1. Descargar
 if os.path.exists(ARCHIVO_DB):
     with open(ARCHIVO_DB, "rb") as f:
         bytes_data = f.read()
@@ -111,14 +113,34 @@ if os.path.exists(ARCHIVO_DB):
     hora_generacion = ahora_bq.strftime("%Y-%m-%d %I:%M %p")
     
     st.sidebar.download_button(
-        label="Descargar Excel",
+        label="⬇️ Descargar Copia de Seguridad",
         data=bytes_data,
         file_name=f"Ventas_Uniformes_{ahora_bq.strftime('%Y-%m-%d')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    st.sidebar.caption(f"📅 Hora BQ: {hora_generacion}")
+    st.sidebar.caption(f"📅 Datos al: {hora_generacion}")
 else:
-    st.sidebar.warning("Sin base de datos aún.")
+    st.sidebar.warning("Base de datos vacía.")
+
+st.sidebar.markdown("---")
+
+# 2. Subir (Restaurar)
+st.sidebar.markdown("#### 🔄 Restaurar Base de Datos")
+archivo_subido = st.sidebar.file_uploader("Subir Excel (.xlsx) para restaurar", type=["xlsx"])
+
+if archivo_subido is not None:
+    # Botón de confirmación para evitar accidentes
+    if st.sidebar.button("⚠️ Confirmar Restauración"):
+        try:
+            # Leer el archivo para validar que sea correcto
+            df_restore = pd.read_excel(archivo_subido)
+            # Guardarlo sobrescribiendo el actual
+            df_restore.to_excel(ARCHIVO_DB, index=False)
+            st.sidebar.success("¡Base de datos restaurada con éxito!")
+            time.sleep(1.5)
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Error al restaurar: {e}")
 
 st.sidebar.markdown("---")
 st.sidebar.header("💰 Gestión de Precios")
@@ -226,7 +248,7 @@ if menu == "Nueva Venta":
                     precio_camisa = precios_camisas_nino.get(talla_camisa_m, 0) if cant_camisa_m > 0 else 0
                     subtotal = (cant_camisa_m * precio_camisa) + (cant_pantalon * costo_pantalon)
                     
-                    # Convertimos cm a metros para el cálculo
+                    # Convertimos cm a metros para el cálculo: (cm/100) + 0.20
                     consumo_tela_item = ((largo_cm / 100.0) + 0.20) * cant_pantalon if cant_pantalon > 0 else 0
                     
                     item_data = {
@@ -239,7 +261,7 @@ if menu == "Nueva Venta":
                         "Medidas Cin": cintura if cant_pantalon > 0 else 0,
                         "Medidas Cad": cadera if cant_pantalon > 0 else 0,
                         "Medidas Pier": pierna if cant_pantalon > 0 else 0,
-                        "Largo Pantalon": largo_cm if cant_pantalon > 0 else 0, # Se guarda en CM
+                        "Largo Pantalon": largo_cm if cant_pantalon > 0 else 0, 
                         "Consumo Tela Calc": consumo_tela_item,
                         "Subtotal": subtotal
                     }
@@ -426,11 +448,12 @@ if menu == "Nueva Venta":
                     "Talla Camisa": item["Talla Camisa"],
                     "Pantalones": item.get("Pantalones", 0),
                     
-                    # BD: Largo en CM
                     "Largo Pant (cm)": item.get("Largo Pantalon", 0),
                     "Medidas Cin (cm)": item.get("Medidas Cin", 0),
                     "Medidas Cad (cm)": item.get("Medidas Cad", 0),
                     "Medidas Pier (cm)": item.get("Medidas Pier", 0),
+                    
+                    "Tela Sugerida (mts)": round(item.get("Consumo Tela Calc", 0), 2),
                     
                     "Subtotal niño(a)": subtotal_item,
                     "Pagado (Distribuido)": int(pago_asignado),
@@ -461,11 +484,77 @@ if menu == "Nueva Venta":
             st.rerun()
 
 # ==========================================
-# SECCIÓN 2: BUSCAR / EDITAR
+# SECCIÓN 2: BUSCAR / EDITAR / DATOS POST-VENTA
 # ==========================================
 elif menu == "Buscar / Editar Ventas":
-    st.header("Base de Datos")
     df = cargar_datos()
+    
+    st.header("📊 Datos Post-Venta")
+    
+    if not df.empty:
+        # --- FILTRO POR TALLA PARA CONTEO DE PRENDAS ---
+        col_dash_filter, _ = st.columns([1, 3])
+        with col_dash_filter:
+            talla_filter = st.selectbox("Filtrar conteo por Talla:", ["Todas"] + tallas)
+        
+        # Lógica de filtrado para conteos
+        if talla_filter == "Todas":
+            df_counts = df
+        else:
+            df_counts = df[df['Talla Camisa'].astype(str) == talla_filter]
+
+        # Cálculos de conteo
+        # Camisas Niño: Tipo Detalle contiene "Niño" y columna Camisas
+        total_camisas_nino = df_counts[df_counts['Tipo Detalle'].astype(str).str.contains("Niño", na=False)]['Camisas'].sum()
+        # Camisas Niña: Tipo Detalle contiene "Niña" y columna Camisas
+        total_camisas_nina = df_counts[df_counts['Tipo Detalle'].astype(str).str.contains("Niña", na=False)]['Camisas'].sum()
+        # Pantalones (Solo niños suelen tener, pero sumamos general por si acaso)
+        total_pantalones = df_counts['Pantalones'].sum()
+
+        # Cálculos Financieros (Globales, no dependen del filtro de talla segun requerimiento de "Total General")
+        total_ventas_dinero = df['Subtotal niño(a)'].sum()
+        total_pendiente_dinero = df['Saldo Pendiente (Distribuido)'].sum() # Usamos la columna distribuida para no duplicar
+
+        # Cálculos Tela (Globales)
+        total_tela_sugerida = df['Tela Sugerida (mts)'].sum()
+        total_tela_entregada = df['Metros Tela (mts)'].sum()
+        balance_tela = total_tela_entregada - total_tela_sugerida
+
+        # --- VISUALIZACIÓN DE MÉTRICAS ---
+        st.markdown("---")
+        
+        # Fila 1: Inventario de Prendas (Afectado por Filtro Talla)
+        st.subheader(f"📦 Conteo de Prendas ({talla_filter})")
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>Camisas Niño</div><div class='metric-value'>{int(total_camisas_nino)}</div></div>", unsafe_allow_html=True)
+        with col_m2:
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>Camisas Niña</div><div class='metric-value'>{int(total_camisas_nina)}</div></div>", unsafe_allow_html=True)
+        with col_m3:
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>Pantalones</div><div class='metric-value'>{int(total_pantalones)}</div></div>", unsafe_allow_html=True)
+
+        # Fila 2: Financiero y Tela (Globales)
+        st.subheader("💰 Financiero & 🧵 Tela (Global)")
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        
+        with col_f1:
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>Ventas Totales</div><div class='metric-value'>${total_ventas_dinero:,.0f}</div></div>", unsafe_allow_html=True)
+        with col_f2:
+             color_deuda = "#d9534f" if total_pendiente_dinero > 0 else "#5cb85c"
+             st.markdown(f"<div class='metric-card'><div class='metric-title'>Cartera (Pendiente)</div><div class='metric-value' style='color:{color_deuda}'>${total_pendiente_dinero:,.0f}</div></div>", unsafe_allow_html=True)
+        
+        with col_f3:
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>Tela Sugerida</div><div class='metric-value'>{total_tela_sugerida:,.2f} m</div></div>", unsafe_allow_html=True)
+        with col_f4:
+            color_tela = "#d9534f" if balance_tela < 0 else "#5cb85c"
+            texto_balance = f"{balance_tela:,.2f} m" if balance_tela >= 0 else f"{balance_tela:,.2f} m (Falta)"
+            st.markdown(f"<div class='metric-card'><div class='metric-title'>Balance Tela (Ent - Sug)</div><div class='metric-value' style='color:{color_tela}'>{texto_balance}</div></div>", unsafe_allow_html=True)
+
+    else:
+        st.info("No hay datos para mostrar estadísticas.")
+
+    st.markdown("---")
+    st.header("🔎 Base de Datos y Gestión")
     
     if not df.empty:
         col_filtro1, col_filtro2 = st.columns([1, 2])
@@ -509,7 +598,7 @@ elif menu == "Buscar / Editar Ventas":
         st.dataframe(df_filtrado.style.apply(color_rows, axis=1))
 
         st.markdown("---")
-        st.subheader("Gestión Post-Venta")
+        st.subheader("Gestión Post-Venta (Individual)")
         
         lista_clientes = df['Cliente'].unique().tolist()
         col_sel1, col_sel2 = st.columns(2)
@@ -574,18 +663,22 @@ elif menu == "Buscar / Editar Ventas":
 
             with col_post2:
                 st.markdown("#### 🧵 Gestión de Tela")
+                
+                # MOSTRAR DESGLOSE SUGERIDO
+                st.markdown("**Desglose Sugerido:**")
                 req_total = 0
-                for _, row in filas_venta.iterrows():
-                    # Usamos el nuevo nombre de columna (cm) para obtener el largo
-                    # Pero OJO: la fórmula requiere metros. Si guardamos cm, convertimos
-                    largo_cm = row.get('Largo Pant (cm)', 0)
-                    qty = row.get('Pantalones', 0)
-                    if largo_cm > 0 and qty > 0:
-                        # Convertir cm a metros para el cálculo: (cm/100) + 0.20
-                        req_total += ((largo_cm / 100.0) + 0.20) * qty
+                for index, row in filas_venta.iterrows():
+                    if row['Pantalones'] > 0:
+                        # Calculamos nuevamente para mostrar o usamos el de BD si existe
+                        # Usamos la lógica de cálculo (cm -> mts + 0.20)
+                        largo_cm = row.get('Largo Pant (cm)', 0)
+                        qty = row.get('Pantalones', 0)
+                        consumo = ((largo_cm / 100.0) + 0.20) * qty
+                        req_total += consumo
+                        st.caption(f"• {row['Nombre Alumno']}: {consumo:.2f} mts")
                 
                 req_sugerido = redondear_tela(req_total)
-                st.write(f"Sugerido: **{req_sugerido}mts** | Entregado: **{metros_entregados_real}mts**")
+                st.write(f"Total Sugerido: **{req_sugerido}mts** | Entregado: **{metros_entregados_real}mts**")
                 
                 nuevos_metros = st.number_input("Adicionar tela entregada (mts):", min_value=0.0, step=0.1, format="%.2f")
                 
