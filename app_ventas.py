@@ -31,7 +31,7 @@ def cargar_datos():
     if os.path.exists(ARCHIVO_DB):
         try:
             df = pd.read_excel(ARCHIVO_DB, dtype={'ID': str, 'Celular Principal': str, 'Celular Adicional': str})
-            # Filtro de seguridad
+            # Filtro de seguridad: Verificamos columnas clave nuevas
             if 'Tela Sugerida (mts)' not in df.columns:
                 return pd.DataFrame()
             return df
@@ -505,15 +505,15 @@ elif menu == "Buscar / Editar Ventas":
         if talla_filter == "Todas":
             df_counts = df
         else:
-            # Filtramos solo para los cálculos visuales, no borramos datos de la DB
+            # Filtramos solo para los cálculos visuales
             df_counts = df[df['Talla Camisa'].astype(str) == talla_filter]
 
-        # 2. Cálculos para "Conteo de Prendas" (Afectados por Talla)
+        # 2. Cálculos para "Conteo de Prendas"
         total_camisas_nino = df_counts[df_counts['Tipo Detalle'].astype(str).str.contains("Niño", na=False)]['Camisas'].sum()
         total_camisas_nina = df_counts[df_counts['Tipo Detalle'].astype(str).str.contains("Niña", na=False)]['Camisas'].sum()
         total_pantalones = df_counts['Pantalones'].sum()
 
-        # 3. Cálculos para "Financiero & Tela" (TAMBIÉN afectados por Talla)
+        # 3. Cálculos para "Financiero & Tela"
         total_ventas_dinero = df_counts['Subtotal niño(a)'].sum()
         total_pendiente_dinero = df_counts['Saldo Pendiente (Distribuido)'].sum()
         
@@ -596,7 +596,16 @@ elif menu == "Buscar / Editar Ventas":
                 return ['background-color: rgba(255, 0, 0, 0.2)'] * len(row)
             return ['background-color: rgba(0, 128, 0, 0.2)'] * len(row)
 
-        st.dataframe(df_filtrado.style.apply(color_rows, axis=1))
+        # APLICACIÓN DE FORMATOS DE 2 DECIMALES
+        format_dict = {
+            "Tela Sugerida (mts)": "{:.2f}",
+            "Metros Tela (mts)": "{:.2f}",
+            "Subtotal niño(a)": "${:,.0f}",
+            "Pagado (Distribuido)": "${:,.0f}",
+            "Saldo Pendiente (Distribuido)": "${:,.0f}"
+        }
+        
+        st.dataframe(df_filtrado.style.format(format_dict, na_rep="-").apply(color_rows, axis=1))
 
         st.markdown("---")
         st.subheader("Gestión Post-Venta (Individual)")
@@ -687,12 +696,11 @@ elif menu == "Buscar / Editar Ventas":
                 else:
                     st.success("✅ COMPLETO")
                 
-                # LISTADO DETALLADO POR NIÑO (NUEVO REQUERIMIENTO)
+                # LISTADO DETALLADO POR NIÑO
                 st.markdown("---")
                 st.markdown("**Detalle por Niño:**")
                 for index, row in filas_venta.iterrows():
                     if row['Pantalones'] > 0:
-                        # Recuperamos el cálculo ya hecho
                         largo_cm = row.get('Largo Pant (cm)', 0)
                         qty = row.get('Pantalones', 0)
                         consumo = ((largo_cm / 100.0) + 0.20) * qty
@@ -709,7 +717,6 @@ elif menu == "Buscar / Editar Ventas":
                         # --- LÓGICA CASCADA TELA ---
                         metros_por_asignar = nuevos_metros
                         
-                        # Obtenemos índices de filas que tienen pantalones > 0
                         indices_pant = df[(df['ID'] == id_editar) & (df['Pantalones'] > 0)].index
                         
                         actualizado_algo = False
@@ -718,36 +725,27 @@ elif menu == "Buscar / Editar Ventas":
                             if metros_por_asignar <= 0:
                                 break
                                 
-                            # Calcular lo que necesita esta fila específica
                             largo_fila_cm = df.at[idx, 'Largo Pant (cm)']
                             qty_fila = df.at[idx, 'Pantalones']
                             consumo_fila_calc = ((largo_fila_cm / 100.0) + 0.20) * qty_fila
-                            # Ajuste de redondeo por seguridad
                             consumo_fila_aprox = redondear_tela(consumo_fila_calc) 
                             
-                            # Cuánto tiene asignado ya
                             tiene_asignado = df.at[idx, 'Metros Tela (mts)']
-                            
-                            # Cuánto le falta
                             falta_fila = consumo_fila_aprox - tiene_asignado
                             
                             if falta_fila > 0:
-                                # Asignamos lo que podamos
                                 aporte = min(falta_fila, metros_por_asignar)
                                 df.at[idx, 'Metros Tela (mts)'] += aporte
                                 metros_por_asignar -= aporte
                                 actualizado_algo = True
                         
-                        # Si sobra tela después de cubrir todos los déficits, se la ponemos al primero
                         if metros_por_asignar > 0 and len(indices_pant) > 0:
                              df.at[indices_pant[0], 'Metros Tela (mts)'] += metros_por_asignar
                              actualizado_algo = True
 
                         if actualizado_algo:
-                            # Actualizar logs y estado global
                             df.loc[df['ID'] == id_editar, 'Entrega Tela'] = "Si"
                             
-                            # Log en la primera fila de pantalones (para no ensuciar todas)
                             idx_log = indices_pant[0]
                             log_prev = str(df.at[idx_log, 'Fecha Entrega Nueva Tela'])
                             if log_prev == "nan": log_prev = ""
