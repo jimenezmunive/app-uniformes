@@ -31,7 +31,7 @@ def cargar_datos():
     if os.path.exists(ARCHIVO_DB):
         try:
             df = pd.read_excel(ARCHIVO_DB, dtype={'ID': str, 'Celular Principal': str, 'Celular Adicional': str})
-            # Filtro de seguridad: Verificamos columnas clave nuevas
+            # Filtro de seguridad
             if 'Tela Sugerida (mts)' not in df.columns:
                 return pd.DataFrame()
             return df
@@ -123,7 +123,7 @@ else:
 
 st.sidebar.markdown("---")
 
-# 2. Subir (Restaurar) - CORREGIDO
+# 2. Subir (Restaurar)
 st.sidebar.markdown("#### 🔄 Restaurar Base de Datos")
 archivo_subido = st.sidebar.file_uploader("Subir Excel para restaurar", type=["xlsx"])
 
@@ -686,6 +686,17 @@ elif menu == "Buscar / Editar Ventas":
                     st.success(f"✅ Sobrante: **{abs(pendiente_tela):.2f}mts**")
                 else:
                     st.success("✅ COMPLETO")
+                
+                # LISTADO DETALLADO POR NIÑO (NUEVO REQUERIMIENTO)
+                st.markdown("---")
+                st.markdown("**Detalle por Niño:**")
+                for index, row in filas_venta.iterrows():
+                    if row['Pantalones'] > 0:
+                        # Recuperamos el cálculo ya hecho
+                        largo_cm = row.get('Largo Pant (cm)', 0)
+                        qty = row.get('Pantalones', 0)
+                        consumo = ((largo_cm / 100.0) + 0.20) * qty
+                        st.write(f"• {row['Tipo Detalle']} | {row['Nombre Alumno']}: **{consumo:.2f} mts**")
 
                 st.markdown("---")
                 nuevos_metros = st.number_input("Adicionar tela entregada (mts):", min_value=0.0, step=0.1, format="%.2f")
