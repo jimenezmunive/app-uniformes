@@ -93,6 +93,9 @@ if 'num_forms_ninos' not in st.session_state:
 if 'num_forms_ninas' not in st.session_state:
     st.session_state.num_forms_ninas = 1
 
+if 'confirmar_eliminar' not in st.session_state:
+    st.session_state.confirmar_eliminar = False
+
 # Cargar configuración
 config_actual = cargar_config()
 precios_camisas_nino = config_actual["precios_nino"]
@@ -245,6 +248,7 @@ if menu == "Nueva Venta":
                     precio_camisa = precios_camisas_nino.get(talla_camisa_m, 0) if cant_camisa_m > 0 else 0
                     subtotal = (cant_camisa_m * precio_camisa) + (cant_pantalon * costo_pantalon)
                     
+                    # CÁLCULO DE TELA SUGERIDA (SIEMPRE SE CALCULA)
                     consumo_tela_item = ((largo_cm / 100.0) + 0.20) * cant_pantalon if cant_pantalon > 0 else 0
                     
                     item_data = {
@@ -402,13 +406,14 @@ if menu == "Nueva Venta":
             fecha_abono = fecha_hoy if (estado_pago == "Abono") else ""
             fecha_total = fecha_hoy if (estado_pago == "Pago Total") else ""
             
-            # Lógica Entrega Tela (Niñas o sin pantalón -> No Aplica)
+            # Lógica Global Entrega Tela
             entrega_tela_str = entrega_tela_global if entrega_tela_global == "Si" else "No"
             
             saldo_pagado_por_asignar = valor_recibido
             metros_tela_por_asignar = metros_tela_global if entrega_tela_global == "Si" else 0
             
             todos_items = []
+            # Identificamos si es niño o niña
             for n in st.session_state.carrito_ninos: n['EsNino'] = True; todos_items.append(n)
             for n in st.session_state.carrito_ninas: n['EsNino'] = False; todos_items.append(n)
             
@@ -430,16 +435,21 @@ if menu == "Nueva Venta":
                 
                 metros_asignados = 0
                 
-                # Definir estado de entrega tela para esta fila
-                estado_entrega_tela_fila = "No Aplica"
-                if item.get("Pantalones", 0) > 0:
+                # REQUERIMIENTO: Si es Niña, Entrega Tela siempre es "No Aplica"
+                if item['EsNino'] == False:
+                    estado_entrega_tela_fila = "No Aplica"
+                elif item.get("Pantalones", 0) > 0:
                     estado_entrega_tela_fila = entrega_tela_str
-                    # Asignación de tela cascada
+                    # Asignación de tela cascada solo si es niño con pantalones
                     if metros_tela_por_asignar > 0:
                         metros_asignados = metros_tela_por_asignar
-                        metros_tela_por_asignar = 0 # Toda la tela global se asigna al primer registro que necesite (si no se quiere distribuir)
-                        # Nota: En nueva venta asignamos todo al primero o distribuimos?
-                        # Para simplificar y seguir lógica anterior: todo al primero del grupo.
+                        metros_tela_por_asignar = 0 
+                else:
+                    # Niño sin pantalones (raro pero posible)
+                    estado_entrega_tela_fila = "No Aplica"
+
+                # REQUERIMIENTO: Tela Sugerida se guarda siempre (item['Consumo Tela Calc'])
+                # Ya se calculó arriba en el botón de agregar/editar item
                 
                 fila = {
                     "ID": id_venta,
@@ -620,41 +630,25 @@ elif menu == "Buscar / Editar Ventas":
         if id_editar:
             filas_venta = df[df['ID'] == id_editar]
             
-            # --- SECCIÓN DE EDICIÓN Y ELIMINACIÓN DE VENTA ---
-            st.markdown("#### 🛠️ Modificar / Eliminar Venta")
-            
-            # Botón Eliminar
-            if st.button("🗑️ Eliminar esta Venta Completa", type="primary"):
-                try:
-                    df = df[df['ID'] != id_editar]
-                    actualizar_db(df)
-                    st.success("Venta eliminada correctamente.")
-                    time.sleep(1.5)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al eliminar: {e}")
-
+            # --- SECCIÓN DE EDICIÓN ---
+            st.markdown("#### 🛠️ Modificar Venta")
             st.write("Puede modificar las cantidades, tallas o medidas directamente en la tabla. Al finalizar, presione 'Guardar Cambios'.")
             
-            # Columnas editables
             cols_edit = ['Nombre Alumno', 'Camisas', 'Talla Camisa', 'Pantalones', 
                          'Largo Pant (cm)', 'Medidas Cin (cm)', 'Medidas Cad (cm)', 'Medidas Pier (cm)']
             
             edited_df = st.data_editor(filas_venta[cols_edit], num_rows="fixed")
             
             if st.button("💾 Guardar Cambios en Registros"):
-                # Proceso de actualización lógica
                 indices_editados = filas_venta.index
                 
                 for idx in indices_editados:
                     row_data = edited_df.loc[idx]
                     
-                    # 1. Recalcular Subtotal
                     talla = row_data['Talla Camisa']
                     qty_cam = row_data['Camisas']
                     qty_pant = row_data['Pantalones']
                     
-                    # Determinar precio camisa (Niño vs Niña)
                     tipo_detalle = df.at[idx, 'Tipo Detalle']
                     if "Niña" in str(tipo_detalle):
                          precio_c = precios_camisas_nina.get(str(talla), 30000)
@@ -663,13 +657,11 @@ elif menu == "Buscar / Editar Ventas":
                     
                     nuevo_subtotal = (qty_cam * precio_c) + (qty_pant * costo_pantalon)
                     
-                    # 2. Recalcular Consumo Tela
                     largo_cm = row_data['Largo Pant (cm)']
                     consumo_tela = 0.0
                     if qty_pant > 0:
                         consumo_tela = ((largo_cm / 100.0) + 0.20) * qty_pant
                     
-                    # 3. Actualizar Dataframe original
                     df.at[idx, 'Nombre Alumno'] = row_data['Nombre Alumno']
                     df.at[idx, 'Camisas'] = qty_cam
                     df.at[idx, 'Talla Camisa'] = talla
@@ -682,15 +674,21 @@ elif menu == "Buscar / Editar Ventas":
                     df.at[idx, 'Subtotal niño(a)'] = nuevo_subtotal
                     df.at[idx, 'Tela Sugerida (mts)'] = round(consumo_tela, 2)
                     
-                    # Recalcular Saldo Pendiente (Nuevo Subtotal - Lo que ya pagó)
                     pagado_actual = df.at[idx, 'Pagado (Distribuido)']
                     nuevo_saldo = nuevo_subtotal - pagado_actual
-                    if nuevo_saldo < 0: nuevo_saldo = 0 # No permitir saldos negativos
+                    if nuevo_saldo < 0: nuevo_saldo = 0 
                     df.at[idx, 'Saldo Pendiente (Distribuido)'] = int(nuevo_saldo)
                     
-                    # Actualizar "No Aplica" si pantalones bajaron a 0
-                    if qty_pant == 0:
+                    # Actualizar "No Aplica" si pantalones bajaron a 0 O si es Niña (reafirmar lógica)
+                    if "Niña" in str(tipo_detalle):
+                         df.at[idx, 'Entrega Tela'] = "No Aplica"
+                    elif qty_pant == 0:
                         df.at[idx, 'Entrega Tela'] = "No Aplica"
+                    else:
+                        # Si es niño y tiene pantalones, asegurarnos que no diga No Aplica si antes decía Si/No
+                         current_val = df.at[idx, 'Entrega Tela']
+                         if current_val == "No Aplica":
+                             df.at[idx, 'Entrega Tela'] = "No" # Reiniciar a estado base si vuelve a tener pantalones
 
                 actualizar_db(df)
                 st.success("Registros actualizados y recalculados.")
@@ -699,9 +697,7 @@ elif menu == "Buscar / Editar Ventas":
 
             st.markdown("---")
             
-            # --- SECCIÓN PAGOS Y TELA (SIN CAMBIOS LÓGICOS MAYORES, SOLO VISUAL) ---
-            
-            # Recalcular totales visuales con la data (posiblemente) editada
+            # --- SECCIÓN PAGOS Y TELA ---
             filas_venta_actual = df[df['ID'] == id_editar]
             total_venta_real = filas_venta_actual['Subtotal niño(a)'].sum()
             pagado_real = filas_venta_actual['Pagado (Distribuido)'].sum()
@@ -774,7 +770,7 @@ elif menu == "Buscar / Editar Ventas":
                 else:
                     st.success("✅ COMPLETO")
                 
-                # LISTADO DETALLADO POR NIÑO (SIN LINEA DIVISORIA)
+                # LISTADO DETALLADO POR NIÑO (SIN LINEA)
                 st.markdown("**Detalle por Niño:**")
                 for index, row in filas_venta_actual.iterrows():
                     if row['Pantalones'] > 0:
@@ -814,7 +810,6 @@ elif menu == "Buscar / Editar Ventas":
                                 metros_por_asignar -= aporte
                                 actualizado_algo = True
                                 
-                                # LOG CASCADA (FECHA EN CADA FILA AFECTADA)
                                 log_prev = str(df.at[idx, 'Fecha Entrega Nueva Tela'])
                                 if log_prev == "nan": log_prev = ""
                                 nuevo_log = f"{log_prev} | {fecha_ahora} (+{aporte:.2f}mts)".strip(" | ")
@@ -825,7 +820,6 @@ elif menu == "Buscar / Editar Ventas":
                              df.at[idx_sobrante, 'Metros Tela (mts)'] += metros_por_asignar
                              actualizado_algo = True
                              
-                             # Log del sobrante también
                              log_prev = str(df.at[idx_sobrante, 'Fecha Entrega Nueva Tela'])
                              if log_prev == "nan": log_prev = ""
                              nuevo_log = f"{log_prev} | {fecha_ahora} (+{metros_por_asignar:.2f}mts)".strip(" | ")
@@ -836,5 +830,32 @@ elif menu == "Buscar / Editar Ventas":
                             actualizar_db(df)
                             st.success("Tela distribuida correctamente.")
                             time.sleep(1.5); st.rerun()
+
+            # --- SECCIÓN DE ELIMINACIÓN AL FINAL ---
+            st.markdown("---")
+            st.markdown("### 🗑️ Zona de Peligro")
+            
+            if st.button("Solicitar Eliminación de Venta", type="primary"):
+                st.session_state.confirmar_eliminar = True
+                st.rerun()
+
+            if st.session_state.confirmar_eliminar:
+                st.warning("⚠️ ¿Está SEGURO de eliminar esta venta permanentemente? Esta acción no se puede deshacer.")
+                col_conf_si, col_conf_no = st.columns(2)
+                
+                if col_conf_si.button("SÍ, Eliminar definitivamente"):
+                    try:
+                        df = df[df['ID'] != id_editar]
+                        actualizar_db(df)
+                        st.session_state.confirmar_eliminar = False
+                        st.success("Venta eliminada correctamente.")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al eliminar: {e}")
+                
+                if col_conf_no.button("NO, Cancelar"):
+                    st.session_state.confirmar_eliminar = False
+                    st.rerun()
     else:
         st.warning("No hay registros.")
